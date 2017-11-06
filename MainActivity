@@ -166,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
             phonenumber1 = reader.readLine();  //첫번째 번호
             phonenumber2 = reader.readLine();  //두번째 번호
             phonenumber3 = reader.readLine();  //세번째 번호
-            emergencysms = reader.readLine();  //메세지
+            emergencysms = reader.readLine();  //메세지 내용
         }
         catch (Exception e){
             e.printStackTrace();
