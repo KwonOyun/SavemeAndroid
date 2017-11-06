@@ -1,0 +1,179 @@
+package com.example.oyun.saveme;
+
+
+import android.Manifest;
+import android.app.Activity;
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.pm.PackageManager;
+import android.graphics.drawable.ColorDrawable;
+import android.hardware.Camera;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.media.AudioManager;
+import android.media.SoundPool;
+import android.support.v4.app.ActivityCompat;
+import android.support.v7.app.AppCompatActivity;
+import android.os.Bundle;
+import android.telephony.SmsManager;
+import android.util.Log;
+import android.view.View;
+import android.widget.Button;
+import android.widget.Toast;
+import android.widget.ToggleButton;
+
+import java.io.BufferedReader;
+import java.io.FileInputStream;
+import java.io.InputStreamReader;
+
+public class MainActivity extends AppCompatActivity {
+
+    int flag;
+    private Camera camera;  //후레쉬 제어를 위해 Camera 객체 생성
+    boolean isFlashOn = true;  //후레쉬 점멸을 위한 boolean 값
+    private LocationManager locationManager;
+    private LocationListener locationListener;
+    private SmsManager smsManager = SmsManager.getDefault();
+    private GPS gps;
+
+    String phonenumber1;
+    String phonenumber2;
+    String phonenumber3;
+    String emergencysms;
+
+    String lat;
+    String lon;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setContentView(R.layout.activity_main);
+
+        final SoundPool sp = new SoundPool(1, AudioManager.STREAM_MUSIC, 0);   //경보음 재생을 위해 SoundPool API사용
+        final int soundID = sp.load(this, R.raw.emergencysound, 1);
+
+        final ToggleButton emergencybutton = (ToggleButton) findViewById(R.id.emergencyButton);
+        Button settingbuttion = (Button) findViewById(R.id.settingButton);
+        Button newsbutton = (Button) findViewById(R.id.newsButton);
+
+        settingbuttion.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent settingintent = new Intent(MainActivity.this, Setting.class);
+                MainActivity.this.startActivity(settingintent);
+            }
+        });
+
+        newsbutton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                Intent newsintent = new Intent(MainActivity.this, News.class);
+                MainActivity.this.startActivity(newsintent);
+            }
+        });
+
+        emergencybutton.setOnClickListener(new View.OnClickListener() {    //경보 버튼을 눌렀을 때
+            @Override
+            public void onClick(View view) {
+                if (emergencybutton.isChecked()) {
+                    flag = 0;
+//                    Toast.makeText(getApplicationContext(), "라이트가 켜지고 경보음이 울립니다.", Toast.LENGTH_LONG).show();
+                    sp.play(soundID, 1f, 1f, 0, -1, 1f); //경보음 시작
+                    blink();  //점멸 Turn On
+                    gps = new GPS(MainActivity.this);   //위치 정보 얻어오기
+                    if(gps.isGetLocation()){
+                        double latitude = gps.getLatitude();
+                        double longitude = gps.getLongitude();
+                        lat = String.valueOf(latitude);
+                        lon = String.valueOf(longitude);
+
+                        Toast.makeText(getApplicationContext(), "위도:"+lat+"경도:"+lon, Toast.LENGTH_LONG).show();
+                    }
+                    else {
+                        gps.showSettingsAlert();
+                    }
+                    loaddata();   //설정되어 있는 번호 불러오기
+                    smsManager.sendTextMessage(phonenumber1, null,  emergencysms, null, null);   //첫번째 번호로 문자 메세지 보내기
+                    smsManager.sendTextMessage(phonenumber1, null,  "https://maps.google.com/?q="+lat+","+lon, null, null);  //위치 전송
+                    smsManager.sendTextMessage(phonenumber2, null,  emergencysms, null, null);   //두번째 번호로 문자 메세지 보내기
+                    smsManager.sendTextMessage(phonenumber2, null,  "https://maps.google.com/?q="+lat+","+lon, null, null);
+                    smsManager.sendTextMessage(phonenumber3, null,  emergencysms, null, null);   //세번째 번호로 문자 메세지 보내기
+                    smsManager.sendTextMessage(phonenumber3, null,  "https://maps.google.com/?q="+lat+","+lon, null, null);
+
+                } else {
+                    flag = 1;
+//                    Toast.makeText(getApplicationContext(), "라이트가 꺼지고 경보음이 꺼집니다.", Toast.LENGTH_LONG).show();
+                    sp.stop(soundID); //경보음 중지
+                    blink(); //점멸 Turn Off
+                    gps.stopUsingGPS();
+                }
+            }
+        });
+    }
+
+    //후레쉬 점멸 기능
+    private void blink() {  //점멸
+        Thread t = new Thread() {  //스레드 생성
+            public void run() {
+                try {
+                    while (flag != 1) { //점멸을 위해 while문 안에서 반복을 하여 후레쉬가 켜졌다 꺼졌다를 반복한다.
+                        if (isFlashOn) {
+                            turnOnFlash();
+                        } else {
+                            sleep(500);
+                            turnOffFlash();
+                        }
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            }
+        };
+        t.start();
+    }
+
+    private void turnOnFlash() {  //Flash On
+
+        camera = Camera.open();
+        Camera.Parameters param = camera.getParameters();
+        param.setFlashMode(Camera.Parameters.FLASH_MODE_TORCH);
+        camera.setParameters(param);
+        camera.startPreview();
+        isFlashOn = false;  //isFlashOn변수를 false로 설정하여 flash가 다시 꺼지게 함.
+    }
+
+    private void turnOffFlash() { //Flash off
+
+        Camera.Parameters param = camera.getParameters();
+        param.setFlashMode(Camera.Parameters.FLASH_MODE_OFF);
+        camera.setParameters(param);
+        camera.stopPreview();
+        camera.release();
+        isFlashOn = true;  //isFlashOn변수를 true로 설정하여 flash가 다시 켜지게 함.
+    }
+
+    public void loaddata(){  //등록정보확인
+        StringBuffer buffer = new StringBuffer();
+
+        try{
+            FileInputStream fis = openFileInput("savemedatainformation.txt");
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(fis));
+            phonenumber1 = reader.readLine();  //첫번째 번호
+            phonenumber2 = reader.readLine();  //두번째 번호
+            phonenumber3 = reader.readLine();  //세번째 번호
+            emergencysms = reader.readLine();  //메세지
+        }
+        catch (Exception e){
+            e.printStackTrace();
+        }
+    }
+
+}
+
+
+
